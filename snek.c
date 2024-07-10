@@ -3,10 +3,13 @@
 #include <time.h> // time, timespec, nanosleep, clock
 #include <stdlib.h> // srand, rand, malloc, free
 #include <signal.h> // signal, SIGINT
+#include <sys/time.h> // gettimeofday
 
 // default 15 autoplay
 #define FPS 15
 
+// compute elapsed time between 2 timevals
+#define TIME(t1, t2) ((t2).tv_sec-(t1).tv_sec)+(((t2).tv_usec-(t1).tv_usec)/1e6)
 // TIME_DIV may need adjusting across systems
 //#define TIME_DIV CLOCKS_PER_SEC
 #define TIME_DIV 1000
@@ -17,6 +20,7 @@
 #define WIDTH 19
 
 struct timespec ts; // arg for nanosleep
+struct timeval tv_0, tv_f; // for gettimeofday
 
 char screen[WIDTH+1][LENGTH+2];
 
@@ -85,6 +89,8 @@ void initTimespec(){
 		endGame(1001);
 	}
 }
+
+/* --- SNEK --- */
 
 int appleEaten;
 
@@ -204,6 +210,8 @@ int drawSnake(){
 	return 0;
 }
 
+/* --- APPLE --- */
+
 void initApple(){
 	appleEaten = 0;
 	struct Obj tempObj;
@@ -238,31 +246,29 @@ void snakeEatsApple(){
 	}
 }
 
-// does not address backtracking
-void decideMove_random1(){
-	switch(rand() % 4){
-		case 0:
-			snakeHEADdir = 'u';
-			break;
-		case 1:
-			snakeHEADdir = 'd';
-			break;
-		case 2:
-			snakeHEADdir = 'l';
-			break;
-		case 3:
-			snakeHEADdir = 'r';
-			break;
-	}
-}
+/* --- CALCULATE SNEK'S NEXT MOVE --- */
 
 char possibleDirs[4][3] = {{'u', 'd', 'l'},
 		   {'u', 'd', 'r'},
 		   {'u', 'l', 'r'},
 		   {'d', 'l', 'r'}};
 
-// addresses backtracking
-void decideMove_random2(){
+int backtracks(){
+	switch(snakeHEADdir){
+		case 'u':
+			return prev_snakeHEADdir == 'd';
+		case 'd':
+			return prev_snakeHEADdir == 'u';
+		case 'l':
+			return prev_snakeHEADdir == 'r';
+		case 'r':
+			return prev_snakeHEADdir == 'l';
+	}
+	return -1;
+}
+
+// picks a random direction for the snake to go
+void decideMove_random(){
 	switch(snakeHEADdir){
 		case 'l':
 			snakeHEADdir = possibleDirs[0][rand() % 3];
@@ -280,26 +286,13 @@ void decideMove_random2(){
 	}
 }
 
-int backtracks(){
-	switch(snakeHEADdir){
-		case 'u':
-			return prev_snakeHEADdir == 'd';
-		case 'd':
-			return prev_snakeHEADdir == 'u';
-		case 'l':
-			return prev_snakeHEADdir == 'r';
-		case 'r':
-			return prev_snakeHEADdir == 'l';
-	}
-	return -1;
-}
-
-void decideMove_simple1(){
+// tries to reduce the distance from the apple to zero.
+// preference for going U/D first, then L/R.
+// if apple is behind snake, will pick a random move.
+void decideMove_simple(){
 	int x_diff = snakeHEAD->obj.x - apple.obj.x; // + = left
 	int y_diff = snakeHEAD->obj.y - apple.obj.y; // + = up
-	struct Segment * currSeg = snakeHEAD;
-	
-	
+	struct Segment * currSeg = snakeHEAD;	
 	
 	if(y_diff < 0){
 		snakeHEADdir = 'd';
@@ -314,9 +307,20 @@ void decideMove_simple1(){
 	}
 	// prevent backtracking
 	if(backtracks()){
-		decideMove_random2();
+		decideMove_random();
 	}
 }
+
+int phase = 0;
+
+void decideMove_perfect(){
+	if(phase){
+		
+	}
+}
+
+
+/* --- SCORE + TIMER --- */
 
 int score;
 char scoreBuf[4];
@@ -328,18 +332,20 @@ void drawScore(){
 	screen[WIDTH-1][11+strlen(scoreBuf)] = '-'; // cut '\0'
 }
 
-clock_t tStart;
-clock_t tCurr;
+struct timeval tStart;
+struct timeval tCurr;
 char tBuf[5]; // seconds
 
-
+// requires tCurr to be accurate
 void drawTime(){
-	sprintf(tBuf, "%0.2f", ((double)tCurr)/TIME_DIV);
+	sprintf(tBuf, "%0.2f", TIME(tStart, tCurr));
 	strcpy(&screen[WIDTH-1][LENGTH-16], "TIME:");
 	screen[WIDTH-1][LENGTH-11] = ' '; // cut '\0'
 	strcpy(&screen[WIDTH-1][LENGTH-10], tBuf);
 	screen[WIDTH-1][LENGTH-10 + strlen(tBuf)] = '-'; // cut '\0'	
 }
+
+/* --- DRAW LOOP (MAIN) --- */
 
 int main(){
 	int ret;
@@ -355,16 +361,16 @@ int main(){
 	score = 0;
 	sprintf(scoreBuf, "%d", score);
 	drawScore();
-	// time
-	tStart = clock();
-	tCurr = 0;
+	// set starting time;
+	gettimeofday(&tStart, NULL);
+	tCurr = tStart;
 	drawTime();
 	renderScreen();
 	nanosleep(&ts, &ts);
 	while(1){
 		drawScreen();
 		prev_snakeHEADdir = snakeHEADdir;
-		decideMove_simple1();
+		decideMove_simple();
 		//move snake head
 		addSegmentHead();
 		snakeEatsApple(); // sets appleEaten
@@ -382,7 +388,8 @@ int main(){
 			endGame(1000);
 		}
 		drawScore();
-		tCurr = clock() - tStart;
+		// time calculation
+		gettimeofday(&tCurr, NULL);
 		drawTime();
 		renderScreen();
 		nanosleep(&ts, &ts);
