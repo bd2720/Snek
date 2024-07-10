@@ -7,17 +7,16 @@
 
 // default 15 autoplay
 #define FPS 15
+// default 65
+#define LENGTH 65
+// default 20
+#define WIDTH 20
 
 // compute elapsed time between 2 timevals
 #define TIME(t1, t2) ((t2).tv_sec-(t1).tv_sec)+(((t2).tv_usec-(t1).tv_usec)/1e6)
-// TIME_DIV may need adjusting across systems
-//#define TIME_DIV CLOCKS_PER_SEC
-#define TIME_DIV 1000
 
-// default 65
-#define LENGTH 65
-// default 19
-#define WIDTH 19
+// function that the CPU uses to decide the direction of the next move.
+#define SNEK_STRATEGY() decideMove_perfect()
 
 struct timespec ts; // arg for nanosleep
 struct timeval tv_0, tv_f; // for gettimeofday
@@ -311,11 +310,43 @@ void decideMove_simple(){
 	}
 }
 
-int phase = 0;
-
+// ONLY WORKS if WIDTH is EVEN
+int perfect_phase = 0;
 void decideMove_perfect(){
-	if(phase){
-		
+	switch(perfect_phase){
+		case 0: // move down (initially)
+			if(snakeHEAD->obj.y == WIDTH-2){ // transition
+				perfect_phase = 1;
+				snakeHEADdir = 'r';
+				return;
+			} else {
+				snakeHEADdir = 'd';
+			}
+			break;
+		case 1: // snaking right
+			if(snakeHEAD->obj.x == LENGTH-2){ // switch to snaking left
+				perfect_phase = 2;
+				snakeHEADdir = 'u';
+				return;
+			} else { // keep snaking right
+				snakeHEADdir = 'r';
+			}
+			break;
+		case 2: // snaking left
+			if(snakeHEAD->obj.x == 2){
+				if(snakeHEAD->obj.y == 1){ // move downwards
+					perfect_phase = 0;
+					snakeHEADdir = 'l';
+				} else { // switch to snaking right
+					perfect_phase = 1;
+					snakeHEADdir = 'u';
+				}
+			} else { // keep snaking left
+				snakeHEADdir = 'l';
+			}
+			break;	
+		default:
+			decideMove_random(); // shouldn't be here
 	}
 }
 
@@ -370,7 +401,7 @@ int main(){
 	while(1){
 		drawScreen();
 		prev_snakeHEADdir = snakeHEADdir;
-		decideMove_simple();
+		SNEK_STRATEGY();
 		//move snake head
 		addSegmentHead();
 		snakeEatsApple(); // sets appleEaten
