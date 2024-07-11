@@ -1,27 +1,25 @@
 #include <stdio.h> // printf, sprintf
 #include <string.h> // memset, strcpy
-#include <time.h> // time, timespec, nanosleep, clock
+#include <time.h> // time, timespec, nanosleep
 #include <stdlib.h> // srand, rand, malloc, free
 #include <signal.h> // signal, SIGINT
 #include <sys/time.h> // gettimeofday
 
-// default 15 autoplay
-#define FPS 15
-// default 65
-#define LENGTH 65
+/* --- CUSTOMIZABLE --- */
+
+// default 16
+#define FPS 30
+// default 64
+#define LENGTH 32
 // default 20
-#define WIDTH 20
-
-// compute elapsed time between 2 timevals
-#define TIME(t1, t2) ((t2).tv_sec-(t1).tv_sec)+(((t2).tv_usec-(t1).tv_usec)/1e6)
-
+#define WIDTH 10
+// initial number of snake segments
+#define SNEK_LEN_INIT 3
 // function that the CPU uses to decide the direction of the next move.
 #define SNEK_STRATEGY() decideMove_perfect()
 
-struct timespec ts; // arg for nanosleep
-struct timeval tv_0, tv_f; // for gettimeofday
-
-char screen[WIDTH+1][LENGTH+2];
+char screen[WIDTH+2][LENGTH+2];
+// extra rows for stats, extra col for null terminators
 
 void drawScreen(){
 	memset(screen[0], '-', LENGTH);
@@ -37,7 +35,7 @@ void drawScreen(){
 }
 
 void renderScreen(){
-	for(int i = 0; i < WIDTH; i++){
+	for(int i = 0; i < WIDTH+2; i++){
 		printf("%s\n", screen[i]);
 	}
 }
@@ -63,31 +61,6 @@ char prev_snakeHEADdir;
 struct Apple {
 	struct Obj obj;
 } apple;
-
-// upon receiving SIGINT (Ctrl+C)
-// free all malloc'd memory and exit
-void endGame(int sig){
-	if(sig == SIGINT) printf("\n"); // because of ^C printout
-	struct Segment * currSeg = snakeHEAD;
-	while(currSeg->next != NULL){
-		currSeg = currSeg->next;
-		free(currSeg->prev);
-	}
-	if(currSeg != NULL) free(currSeg);
-	exit(sig);
-}
-
-void initTimespec(){
-	if(FPS > 1){
-		ts.tv_sec = 0;
-		ts.tv_nsec = (1000000000/FPS);
-	} else if(FPS == 1){
-		ts.tv_sec = 1;
-		ts.tv_nsec = 0;
-	} else {
-		endGame(1001);
-	}
-}
 
 /* --- SNEK --- */
 
@@ -166,9 +139,9 @@ void initSnake(){
 	snakeTAIL = NULL;
 	snakeHEADdir = 'd';
 	prev_snakeHEADdir = '\0';
-	addSegmentHead();
-	addSegmentHead();
-	addSegmentHead();
+	for(int i = 0; i < SNEK_LEN_INIT; i++){
+		addSegmentHead();
+	}
 }
 
 void moveSnake(){
@@ -245,6 +218,85 @@ void snakeEatsApple(){
 	}
 }
 
+/* --- SCORE + TIMER --- */
+
+// maximum score; result from previous macros
+#define SNEK_SCORE_MAX ((((LENGTH)-2) * ((WIDTH)-2)) - (SNEK_LEN_INIT))
+// compute elapsed time between 2 timevals
+#define TIME(t1, t2) ((t2).tv_sec-(t1).tv_sec)+(((t2).tv_usec-(t1).tv_usec)/1e6)
+
+struct timespec ts; // arg for nanosleep
+
+void initTimespec(){
+	if(FPS > 1){
+		ts.tv_sec = 0;
+		ts.tv_nsec = (1000000000/FPS);
+	} else {
+		// just set effective FPS to 1
+		ts.tv_sec = 1;
+		ts.tv_nsec = 0;
+	}
+}
+
+int score;
+char scoreBuf[16];
+
+void drawScore(){
+	sprintf(scoreBuf, "%d", score);
+	strcpy(&screen[WIDTH][0], "SCORE: ");
+	strcpy(&screen[WIDTH][7], scoreBuf); 
+}
+
+struct timeval tStart;
+struct timeval tCurr;
+char tBuf[16]; // seconds
+
+// requires tCurr to be accurate
+void drawTime(){
+	sprintf(tBuf, "%0.2f", TIME(tStart, tCurr));
+	strcpy(&screen[WIDTH+1][0], "TIME: ");
+	strcpy(&screen[WIDTH+1][6], tBuf);
+}
+
+// draws score and time
+void drawStats(){
+	drawScore();
+	gettimeofday(&tCurr, NULL);
+	drawTime();
+}
+
+enum ExitCode { SNEK_ERR = 999, SNEK_LOSE, SNEK_WIN };
+
+// upon receiving SIGINT (Ctrl+C)
+// free all malloc'd memory and exit
+void endGame(int sig){
+	if(sig == SIGINT) printf("\n"); // because of ^C printout
+	switch(sig){
+		case SNEK_ERR:
+			printf("ERROR: FPS value is not a positive integer!\n");
+			break;
+		case SNEK_LOSE:
+			printf("Crashed going %c!\n", snakeHEADdir);
+			break;
+		case SNEK_WIN:
+			// draw and render rest of frame
+			drawSnake(); // !collision unchecked!
+			drawStats();
+			renderScreen();
+			printf("PERFECT!!! You Win!\n");
+			break;
+	}
+	// delete snake
+	struct Segment * currSeg = snakeHEAD;
+	while(currSeg->next != NULL){
+		currSeg = currSeg->next;
+		free(currSeg->prev);
+	}
+	if(currSeg != NULL) free(currSeg);
+	// exit and pass signal along
+	exit(sig);
+}
+
 /* --- CALCULATE SNEK'S NEXT MOVE --- */
 
 char possibleDirs[4][3] = {{'u', 'd', 'l'},
@@ -285,10 +337,11 @@ void decideMove_random(){
 	}
 }
 
-// tries to reduce the distance from the apple to zero.
-// preference for going U/D first, then L/R.
-// if apple is behind snake, will pick a random move.
-void decideMove_simple(){
+/* 	Tries to reduce the distance from the apple to zero.
+	 	Preference for going U/D first, then L/R.
+ 		If apple is behind snake, will pick a random move.
+*/
+void decideMove_greedy(){
 	int x_diff = snakeHEAD->obj.x - apple.obj.x; // + = left
 	int y_diff = snakeHEAD->obj.y - apple.obj.y; // + = up
 	struct Segment * currSeg = snakeHEAD;	
@@ -350,32 +403,6 @@ void decideMove_perfect(){
 	}
 }
 
-
-/* --- SCORE + TIMER --- */
-
-int score;
-char scoreBuf[4];
-
-void drawScore(){
-	strcpy(&screen[WIDTH-1][5], "SCORE:");
-	screen[WIDTH-1][10] = ' '; // cut '\0'
-	strcpy(&screen[WIDTH-1][11], scoreBuf); 
-	screen[WIDTH-1][11+strlen(scoreBuf)] = '-'; // cut '\0'
-}
-
-struct timeval tStart;
-struct timeval tCurr;
-char tBuf[5]; // seconds
-
-// requires tCurr to be accurate
-void drawTime(){
-	sprintf(tBuf, "%0.2f", TIME(tStart, tCurr));
-	strcpy(&screen[WIDTH-1][LENGTH-16], "TIME:");
-	screen[WIDTH-1][LENGTH-11] = ' '; // cut '\0'
-	strcpy(&screen[WIDTH-1][LENGTH-10], tBuf);
-	screen[WIDTH-1][LENGTH-10 + strlen(tBuf)] = '-'; // cut '\0'	
-}
-
 /* --- DRAW LOOP (MAIN) --- */
 
 int main(){
@@ -390,7 +417,6 @@ int main(){
 	drawApple();
 	 // score
 	score = 0;
-	sprintf(scoreBuf, "%d", score);
 	drawScore();
 	// set starting time;
 	gettimeofday(&tStart, NULL);
@@ -406,22 +432,20 @@ int main(){
 		addSegmentHead();
 		snakeEatsApple(); // sets appleEaten
 		if(appleEaten){
-			initApple(); // unsets appleEaten
 			score++;
-			sprintf(scoreBuf, "%d", score);
+			if(score == SNEK_SCORE_MAX){ // perfect game!!!
+				endGame(SNEK_WIN);
+			}
+			initApple(); // unsets appleEaten
 		} else {
 			remSegmentTail();
 		}
 		drawApple();
 		ret = drawSnake();
 		if(ret < 0){ // if snake collided with wall or itself
-			printf("Crashed going %c!\n", snakeHEADdir);
-			endGame(1000);
+			endGame(SNEK_LOSE);
 		}
-		drawScore();
-		// time calculation
-		gettimeofday(&tCurr, NULL);
-		drawTime();
+		drawStats();
 		renderScreen();
 		nanosleep(&ts, &ts);
 	}
