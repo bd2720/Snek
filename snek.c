@@ -10,9 +10,9 @@
 // default 16
 #define FPS 30
 // default 64
-#define WIDTH 24
+#define WIDTH 16
 // default 20
-#define HEIGHT 14
+#define HEIGHT 9
 // initial number of snake segments
 #define SNEK_LEN_INIT 4
 // function that the CPU uses to decide the direction of the next move.
@@ -406,9 +406,43 @@ void decideMove_perfectEasy(){
 	}
 }
 
-// TODO: implement medium (easy but rotated)
+// ONLY WORKS with EVEN WIDTH
 void decideMove_perfectMed(){
-
+	switch(perfect_phase){
+		case 0: // move right (initially)
+			if(snakeHEAD->obj.x == WIDTH-2){ // transition
+				perfect_phase = 1;
+				snakeHEADdir = 'u';
+				return;
+			} else {
+				snakeHEADdir = 'r';
+			}
+			break;
+		case 1: // snaking up
+			if(snakeHEAD->obj.y == 1){ // switch to snaking down
+				perfect_phase = 2;
+				snakeHEADdir = 'l';
+				return;
+			} else { // keep snaking up
+				snakeHEADdir = 'u';
+			}
+			break;
+		case 2: // snaking down
+			if(snakeHEAD->obj.y == HEIGHT-3){
+				if(snakeHEAD->obj.x == 1){ // move leftward
+					perfect_phase = 0;
+					snakeHEADdir = 'd';
+				} else { // switch to snaking up
+					perfect_phase = 1;
+					snakeHEADdir = 'l';
+				}
+			} else { // keep snaking down
+				snakeHEADdir = 'd';
+			}
+			break;	
+		default:
+			decideMove_random(); // shouldn't be here
+	}
 }
 
 // TODO: implement hard (more phases)
