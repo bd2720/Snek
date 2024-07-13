@@ -10,61 +10,58 @@
 // default 16
 #define FPS 30
 // default 64
-#define LENGTH 32
+#define WIDTH 24
 // default 20
-#define WIDTH 10
+#define HEIGHT 14
 // initial number of snake segments
-#define SNEK_LEN_INIT 3
+#define SNEK_LEN_INIT 4
 // function that the CPU uses to decide the direction of the next move.
-#define SNEK_STRATEGY() decideMove_perfect()
+#define SNEK_STRATEGY STRAT_PERF
 
-char screen[WIDTH+2][LENGTH+2];
+/* --- SCREEN --- */
+
+char screen[HEIGHT+2][WIDTH+2];
 // extra rows for stats, extra col for null terminators
 
 void drawScreen(){
-	memset(screen[0], '-', LENGTH);
-	screen[0][LENGTH] = 0;
-	for(int i = 1; i < WIDTH-1; i++){
+	memset(screen[0], '-', WIDTH);
+	screen[0][WIDTH] = 0;
+	for(int i = 1; i < HEIGHT-1; i++){
 		screen[i][0] = '|';
-		screen[i][LENGTH-1] = '|';
-		screen[i][LENGTH] = 0;
-		memset(screen[i]+1, ' ', LENGTH-2);	
+		screen[i][WIDTH-1] = '|';
+		screen[i][WIDTH] = 0;
+		memset(screen[i]+1, ' ', WIDTH-2);	
 	}
-	memset(screen[WIDTH-1], '-', LENGTH);
-	screen[WIDTH-1][LENGTH] = 0;
+	memset(screen[HEIGHT-1], '-', WIDTH);
+	screen[HEIGHT-1][WIDTH] = 0;
 }
 
 void renderScreen(){
-	for(int i = 0; i < WIDTH+2; i++){
+	for(int i = 0; i < HEIGHT+2; i++){
 		printf("%s\n", screen[i]);
 	}
 }
 
 struct Obj {
-	int x; // x pos; 0 < x < LENGTH
-	int y; // y pos; 0 < x < WIDTH
+	int x; // x pos; 0 < x < WIDTH
+	int y; // y pos; 0 < x < HEIGHT
 };
 
+/* --- SNAKE --- */
 
-// doubly linked list node of snake segs
 struct Segment {
 	struct Segment * prev;
 	struct Segment * next;	
 	struct Obj obj;
 };
-
+// doubly linked list node of snake segs
 struct Segment * snakeHEAD;
 struct Segment * snakeTAIL;
+// directions: 'u', 'l', 'd', 'r'
 char snakeHEADdir;
 char prev_snakeHEADdir;
 
-struct Apple {
-	struct Obj obj;
-} apple;
-
 /* --- SNEK --- */
-
-int appleEaten;
 
 void addSegmentHead(){
 	if(snakeHEAD == NULL){
@@ -73,8 +70,8 @@ void addSegmentHead(){
 		snakeHEAD->next = NULL;
 		snakeTAIL = snakeHEAD;
 		
-		snakeHEAD->obj.x = LENGTH/2;
-		snakeHEAD->obj.y = WIDTH/2 - 2;
+		snakeHEAD->obj.x = WIDTH/2;
+		snakeHEAD->obj.y = HEIGHT/2 - 2;
 		return;
 	}
 	struct Segment *newSeg = (struct Segment*)malloc(sizeof(struct Segment));
@@ -184,6 +181,12 @@ int drawSnake(){
 
 /* --- APPLE --- */
 
+struct Apple {
+	struct Obj obj;
+} apple;
+
+int appleEaten = 0;
+
 void initApple(){
 	appleEaten = 0;
 	struct Obj tempObj;
@@ -191,8 +194,8 @@ void initApple(){
 	int valid; // if apple collides with snake
 	do {
 		valid = 1;
-		tempObj.x = rand() % (LENGTH - 2) + 1;
-		tempObj.y = rand() % (WIDTH - 2) + 1;
+		tempObj.x = rand() % (WIDTH - 2) + 1;
+		tempObj.y = rand() % (HEIGHT - 2) + 1;
 		currSeg = snakeHEAD;
 		while(currSeg != NULL){
 			if(tempObj.x == currSeg->obj.x
@@ -221,7 +224,7 @@ void snakeEatsApple(){
 /* --- SCORE + TIMER --- */
 
 // maximum score; result from previous macros
-#define SNEK_SCORE_MAX ((((LENGTH)-2) * ((WIDTH)-2)) - (SNEK_LEN_INIT))
+#define SNEK_SCORE_MAX ((((WIDTH)-2) * ((HEIGHT)-2)) - (SNEK_LEN_INIT))
 // compute elapsed time between 2 timevals
 #define TIME(t1, t2) ((t2).tv_sec-(t1).tv_sec)+(((t2).tv_usec-(t1).tv_usec)/1e6)
 
@@ -243,8 +246,8 @@ char scoreBuf[16];
 
 void drawScore(){
 	sprintf(scoreBuf, "%d", score);
-	strcpy(&screen[WIDTH][0], "SCORE: ");
-	strcpy(&screen[WIDTH][7], scoreBuf); 
+	strcpy(&screen[HEIGHT][0], "SCORE: ");
+	strcpy(&screen[HEIGHT][7], scoreBuf); 
 }
 
 struct timeval tStart;
@@ -254,8 +257,8 @@ char tBuf[16]; // seconds
 // requires tCurr to be accurate
 void drawTime(){
 	sprintf(tBuf, "%0.2f", TIME(tStart, tCurr));
-	strcpy(&screen[WIDTH+1][0], "TIME: ");
-	strcpy(&screen[WIDTH+1][6], tBuf);
+	strcpy(&screen[HEIGHT+1][0], "TIME: ");
+	strcpy(&screen[HEIGHT+1][6], tBuf);
 }
 
 // draws score and time
@@ -297,7 +300,7 @@ void endGame(int sig){
 	exit(sig);
 }
 
-/* --- CALCULATE SNEK'S NEXT MOVE --- */
+/* --- STRATEGY --- */
 
 char possibleDirs[4][3] = {{'u', 'd', 'l'},
 		   {'u', 'd', 'r'},
@@ -363,12 +366,12 @@ void decideMove_greedy(){
 	}
 }
 
-// ONLY WORKS if WIDTH is EVEN
+// ONLY WORKS with EVEN HEIGHT
 int perfect_phase = 0;
-void decideMove_perfect(){
+void decideMove_perfectEasy(){
 	switch(perfect_phase){
 		case 0: // move down (initially)
-			if(snakeHEAD->obj.y == WIDTH-2){ // transition
+			if(snakeHEAD->obj.y == HEIGHT-2){ // transition
 				perfect_phase = 1;
 				snakeHEADdir = 'r';
 				return;
@@ -377,7 +380,7 @@ void decideMove_perfect(){
 			}
 			break;
 		case 1: // snaking right
-			if(snakeHEAD->obj.x == LENGTH-2){ // switch to snaking left
+			if(snakeHEAD->obj.x == WIDTH-2){ // switch to snaking left
 				perfect_phase = 2;
 				snakeHEADdir = 'u';
 				return;
@@ -403,6 +406,43 @@ void decideMove_perfect(){
 	}
 }
 
+// TODO: implement medium (easy but rotated)
+void decideMove_perfectMed(){
+
+}
+
+// TODO: implement hard (more phases)
+void decideMove_perfectHard(){
+	
+}
+
+void (*activeStrategy)(); // set by initStrategy
+enum Strategy {STRAT_RAND, STRAT_GREED, STRAT_PERF};
+
+// determines which decideMove_... to use
+void initStrategy(){
+	switch(SNEK_STRATEGY){
+		case STRAT_RAND:
+			activeStrategy = decideMove_random;
+			break;
+		case STRAT_GREED:
+			activeStrategy = decideMove_greedy;
+			break;
+		case STRAT_PERF:
+			// examine board dimensions
+			if(HEIGHT % 2 == 0){ // easy strat with even HEIGHT
+				activeStrategy = decideMove_perfectEasy;
+			} else {
+				if(WIDTH % 2 == 0){ // easy strat rotated
+					activeStrategy = decideMove_perfectMed;
+				} else { // more complex strat if both dims odd
+					activeStrategy = decideMove_perfectHard;
+				}
+			}
+			break;
+	}
+}
+
 /* --- DRAW LOOP (MAIN) --- */
 
 int main(){
@@ -415,6 +455,7 @@ int main(){
 	drawSnake();
 	initApple(); // after drawing snake
 	drawApple();
+	initStrategy(); // initialize activeStrategy
 	 // score
 	score = 0;
 	drawScore();
@@ -427,7 +468,7 @@ int main(){
 	while(1){
 		drawScreen();
 		prev_snakeHEADdir = snakeHEADdir;
-		SNEK_STRATEGY();
+		activeStrategy();
 		//move snake head
 		addSegmentHead();
 		snakeEatsApple(); // sets appleEaten
