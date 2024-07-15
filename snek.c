@@ -10,7 +10,7 @@
 // default 16
 #define FPS 30
 // default 64
-#define WIDTH 16
+#define WIDTH 17
 // default 20
 #define HEIGHT 9
 // initial number of snake segments
@@ -445,9 +445,72 @@ void decideMove_perfectMed(){
 	}
 }
 
-// TODO: implement hard (more phases)
+// when HEIGHT and WIDTH are BOTH ODD
+int perfect_parity = 0; // if on an even or odd loop of the strategy
 void decideMove_perfectHard(){
-	
+	switch(perfect_phase){
+		case 0: // move right (initially)
+			if(snakeHEAD->obj.x == WIDTH-3){
+				if(snakeHEAD->obj.y == 1){ // switch to moving down along the wall
+					perfect_phase = 1;
+					snakeHEADdir = 'r';
+				} else { // move leftward
+					perfect_phase = 7;
+					snakeHEADdir = 'u';
+				}
+			} else { // keep moving toward the righthand wall
+				snakeHEADdir = 'r';
+			}
+			break;
+		case 1: // move down towards BR corner
+			if(snakeHEAD->obj.y == HEIGHT-2){ // begin mini-snaking to BL corner
+				perfect_phase = 2;
+				snakeHEADdir = 'l';
+			} else { // keep moving down to BR corner
+				snakeHEADdir = 'd';
+			}
+			break;
+		case 2: // mini-snaking towards BL corner (down)
+			if(snakeHEAD->obj.x == 2){ // depends on parity
+				perfect_phase = 5;
+				snakeHEADdir = (perfect_parity) ? 'u' : 'l';
+			} else {
+				perfect_phase = 3;
+				snakeHEADdir = 'u';
+			}
+			break;
+		case 3: // mini-snaking towards BL corner (left)
+			if(snakeHEAD->obj.y == HEIGHT-2){
+				perfect_phase = 2;
+			} else {
+				perfect_phase = 4;
+			}
+				snakeHEADdir = 'l';
+			break;
+		case 4: // mini-snaking towards BL corner (down)
+			perfect_phase = 3;
+			snakeHEADdir = 'd';
+			break;
+		case 5: // depends on parity
+			perfect_phase = 6;
+			snakeHEADdir = (perfect_parity) ? 'l' : 'u';
+			break;
+		case 6: // finish	parity movement
+			perfect_phase = 0;
+			perfect_parity = !perfect_parity; // flip parity
+			snakeHEADdir = 'u';
+			break;
+		case 7: // snaking left
+			if(snakeHEAD->obj.x == 1){ // snake right again
+				perfect_phase = 0;
+				snakeHEADdir = 'u';
+			} else { // continue snaking left
+				snakeHEADdir = 'l';
+			}
+			break;
+		default:
+			decideMove_random(); // shouldn't be here
+	}	
 }
 
 void (*activeStrategy)(); // set by initStrategy
